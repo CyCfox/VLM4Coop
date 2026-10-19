@@ -96,7 +96,7 @@ def test_cached_raw_probabilities_follow_current_numeric_rule(monkeypatch,tmp_pa
     finally: cache.close()
 
 
-def test_empty_final_text_must_verify_off_before_format_fallback(monkeypatch,tmp_path):
+def test_reasoning_without_json_uses_three_format_attempts(monkeypatch,tmp_path):
     teacher=teacher_with_responses(monkeypatch,tmp_path,[],purpose='pure')
     class Response:
         status,headers=200,{}
@@ -106,10 +106,10 @@ def test_empty_final_text_must_verify_off_before_format_fallback(monkeypatch,tmp
             return json.dumps({'choices':[{'message':{'content':None,'reasoning_content':'still thinking'}}],
                 'usage':{'completion_tokens_details':{'reasoning_tokens':10}}}).encode()
     monkeypatch.setattr('vlm4coop.api_teacher.urlopen',lambda *a,**k:Response())
-    from vlm4coop.api_teacher import ApiRequestError
-    with pytest.raises(ApiRequestError,match='verify thinking disabled'):
-        teacher.predict(Image.new('RGB',(2,2)),3,use_cache=False)
-    assert teacher.calls==2 and teacher.format_failures==teacher.failed_decisions==0
+    result=teacher.predict(Image.new('RGB',(2,2)),3,use_cache=False)
+    assert result.source=='format_failure' and teacher.calls==3
+    assert teacher.format_failures==3 and teacher.failed_decisions==1
+    assert teacher.responses_with_reasoning==3 and teacher.thinking_control_retries==0
 
 
 def test_verified_off_empty_final_text_uses_three_format_attempts(monkeypatch,tmp_path):
@@ -141,8 +141,8 @@ def test_absent_reasoning_usage_stays_unknown_without_control_retry(monkeypatch,
 
 
 @pytest.mark.parametrize('tokens,hidden,expected',[
-    (None,'hidden','contradicted'),(10,'','contradicted'),
-    (0,'hidden','contradicted'),(None,'','not_reported'),(0,'','reported_zero')])
+    (None,'hidden','returned_reasoning'),(10,'','returned_reasoning'),
+    (0,'hidden','returned_reasoning'),(None,'','not_reported'),(0,'','reported_zero')])
 def test_thinking_evidence_does_not_treat_missing_as_zero(tokens,hidden,expected):
     from vlm4coop.api_teacher import off_response_evidence
     response={'choices':[{'message':{'reasoning_content':hidden}}],
@@ -150,38 +150,50 @@ def test_thinking_evidence_does_not_treat_missing_as_zero(tokens,hidden,expected
     assert off_response_evidence(response)==expected
 
 
-@pytest.mark.parametrize('hidden_count',[1,8])
-def test_paid_route_retries_identical_native_off_and_never_accepts_hidden(monkeypatch,tmp_path,hidden_count):
-    from vlm4coop.api_teacher import ApiRequestError
+@pytest.mark.parametrize('source',['content','reasoning_content'])
+@pytest.mark.parametrize('values',[[0,0,0,0,0,1],[2,-.5,.5,.5,0,0]])
+def test_returned_reasoning_accepts_valid_or_repaired_json_once_and_caches(monkeypatch,tmp_path,source,values):
     monkeypatch.setenv('OPENCODE_API_KEY','TEST-ONLY')
+    cache=ProbabilityCache(tmp_path/'cache.sqlite',{'test':'reasoning'})
     teacher=OpenCodeTeacher(dict(model='test',
         endpoint='https://opencode.ai/inference/openai/v1/chat/completions',
-        thinking={'type':'disabled'},concurrency=1000),tmp_path/'calls.jsonl',purpose='distillation')
+        thinking={'type':'disabled'},concurrency=1000),tmp_path/'calls.jsonl',cache,purpose='distillation')
     payloads=[]
     class Response:
         status,headers=200,{}
         def __enter__(self): return self
         def __exit__(self,*args): pass
         def read(self):
-            hidden=teacher.calls<=hidden_count
+            message={'content':None,'reasoning_content':'brief joint planning'}
+            message[source]='<think>joint planning\n'+answer(values)+'</think>'
             return json.dumps({'id':f'test-{teacher.calls}',
-                'choices':[{'message':{'content':answer([0,0,0,0,0,1]),
-                    'reasoning_content':'hidden' if hidden else None}}],
-                'usage':{'completion_tokens_details':{'reasoning_tokens':100 if hidden else 0}}}).encode()
+                'choices':[{'message':message}],
+                'usage':{'completion_tokens_details':{'reasoning_tokens':100}}}).encode()
     def request(req,**kwargs):
         payloads.append(json.loads(req.data)); return Response()
     monkeypatch.setattr('vlm4coop.api_teacher.urlopen',request)
-    if hidden_count==1:
-        result=teacher.predict(Image.new('RGB',(2,2)),3,use_cache=False)
-        assert result.source=='teacher' and teacher.calls==2
+    image=Image.new('RGB',(2,2))
+    try:
+        result=teacher.predict(image,3)
+        assert result.source=='teacher' and teacher.calls==1
+        np.testing.assert_allclose(result.probs[0],clip_and_normalize(values)[0])
         label=json.loads((tmp_path/'teacher_labels.jsonl').read_text())
-        assert label['reasoning_tokens']==0 and label['control_attempt']==1
-    else:
-        with pytest.raises(ApiRequestError,match='verify thinking disabled'):
-            teacher.predict(Image.new('RGB',(2,2)),3,use_cache=False)
-        assert teacher.calls==8 and not (tmp_path/'teacher_labels.jsonl').exists()
-    assert all(payload==payloads[0] for payload in payloads)
+        assert label['reasoning_tokens']==100 and label['control_attempt']==0
+        assert label['thinking_evidence']=='returned_reasoning' and label['answer_source']==source
+        assert teacher.predict(image,3).cache_hit and teacher.calls==cache.writes==1
+    finally: cache.close()
     assert payloads[0]['thinking']=={'type':'disabled'} and 'reasoning_effort' not in payloads[0]
     assert teacher.format_failures==teacher.failed_decisions==0
-    assert teacher.thinking_control_failures==hidden_count
-    assert teacher.thinking_control_retries==teacher.calls-1
+    assert teacher.thinking_control_failures==teacher.thinking_control_retries==0
+    assert teacher.responses_with_reasoning==1
+
+
+def test_final_content_has_priority_over_reasoning_draft(monkeypatch,tmp_path):
+    from vlm4coop.api_teacher import completion_text
+    response={'choices':[{'message':{'content':answer([0,0,0,0,0,1]),
+                                    'reasoning_content':answer([1,0,0,0,0,0])}}]}
+    raw,source=completion_text(response)
+    assert source=='content' and parse_api_probabilities(raw,3,'distillation')[0].argmax(-1).tolist()==[5]*3
+    response['choices'][0]['message']['content']='Final answer: {"agents":['
+    raw,_=completion_text(response)
+    with pytest.raises(ProbabilityFormatError): parse_api_probabilities(raw,3,'distillation')

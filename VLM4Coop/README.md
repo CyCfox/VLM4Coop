@@ -5,7 +5,7 @@ installation, tests, training and inference run inside Docker. New artifacts sta
 under this directory; the root Chinese `CODEX_CHECKPOINT.md` is the required
 handoff exception. Preserve every existing run, checkpoint and raw response.
 
-## Current status — 2026-10-18
+## Current status — 2026-10-19
 
 - The fixed-500 MAPPO baseline completed 1,000,000 joint environment steps:
   `results/mappo_8x8_formal_fixed500_1000k_20261017_01`; validated statistics and
@@ -14,19 +14,40 @@ handoff exception. Preserve every existing run, checkpoint and raw response.
   3,102 joint steps and 3,150 HTTP attempts, with no probability cache.
   Its original Go endpoint and frozen evidence remain unchanged.
   Earlier `_01`, `_02`, `_03` attempts are incomplete and have no 100-episode score.
-- The user authorized the main Soft/3/seed0 1000k run at the new non-Go endpoint.
-  It is running in `results/soft_8x8_fixed500_1000k_api_20261018_01`, with cache-first
-  teacher labels and a 1000 HTTP concurrency limit. Wait for natural completion;
-  do not launch a duplicate or inspect interim scores. Hard and the 4/5-agent
-  runs are not included in this launch. The full research/paper is incomplete.
-- Current implementation tests: 75 passed in CPU Docker, 55.56 s:
-  `reports/pytest_soft_native_off_retry_20261018.log`. Synthetic teacher tests are not
+- Soft/3/seed0 completed 1,000,148 steps in
+  `results/soft_8x8_fixed500_1000k_api_20261018_01`; offline validation and exports
+  are in its `_analysis` directory.
+- Hard/3/seed0 failed after its first 1000-step update in
+  `results/hard_8x8_fixed500_1000k_api_20261019_01`, with 500 fixed training seeds,
+  a 1,000k-step budget, cache-first teacher labels and a 1000 HTTP concurrency
+  limit. It uses the same teacher probabilities as Soft and argmax CE for KD.
+  OFF-control exhaustion during second-batch annotation stopped training at
+  11:32 UTC+8; it has one completed evaluation, not a 1000k result. The container
+  exited; its records remain preserved. See this run's INCIDENT_REPORT.md and
+  incident_summary.json. Raw status counters partly retain the previous batch;
+  future failure logging has been corrected and tested separately.
+  The 4/5-agent runs are not included. The full research/paper is incomplete.
+- The user subsequently clarified that returned reasoning is allowed when JSON
+  is valid or numerically repairable. OFF remains the request preference; there
+  are no reasoning-control retries. Hard `_02` restarted from seed 0 at 12:03
+  UTC+8 and is running with a 1,000k-step budget, sharing the existing cache:
+  `results/hard_8x8_fixed500_1000k_api_20261019_02`.
+  Container: `vlm4coop_api_1792382610_cyc`; exec session 78486.
+  One launch check passed without reading intermediate scores. This is a fresh
+  initialization, not exact checkpoint continuation. See
+  `reports/HARD_ACCEPT_REASONING_RUN.md`.
+- Current implementation tests: 79 passed in CPU Docker, 63.12 s:
+  `reports/pytest_accept_reasoning_20261019.log`. Synthetic teacher tests are not
   model results. Independent code and documented-invocation checks are saved in
-  `reports/SOFT_API_1000K_CODE_REVIEW.md` and `SOFT_API_1000K_DOC_VALIDATION.md`
+  `reports/SOFT_API_1000K_CODE_REVIEW.md` and `SOFT_API_1000K_DOC_VALIDATION.md`.
+  The Hard launch additionally passed two targeted Docker tests (7.19 s),
+  cache-only engineering preflight and `HARD_API_1000K_CODE_REVIEW.md` /
+  `HARD_API_1000K_DOC_VALIDATION.md`
   (same-family provisional).
 
 The current detailed response policy and exact formal invocation are in
-`reports/SOFT_1000K_API_RUN.md` and `reports/RESPONSE_FAILURE_FINAL_PROTOCOL.md`. Protocol decisions overriding the
+`reports/HARD_1000K_API_RUN.md`, `reports/SOFT_1000K_API_RUN.md` and
+`reports/RESPONSE_FAILURE_FINAL_PROTOCOL.md`. Protocol decisions overriding the
 original proposal are recorded in `reports/USER_PROTOCOL_DECISION.md`; resume
 from the root checkpoint and verify actual files/containers first.
 
@@ -51,7 +72,7 @@ training-seed variation. Only successful episode lengths enter completion time.
 The user replaced local Qwen with `deepseek-v4.1-flash` at
 `https://opencode.ai/inference/openai/v1/chat/completions` for the new Soft run.
 Completed Pure VLM used the frozen Go endpoint. Current requests use
-`thinking.type=disabled`, omit `reasoning_effort` initially and omit `max_tokens`;
+`thinking.type=disabled`, omit `reasoning_effort` and omit `max_tokens`;
 `top_p=0.95` is a requested parameter, not a measured provider-effective value.
 The frozen v6 system/user prompts are in `src/vlm4coop/api_teacher.py`. One global
 RGB includes stable zero-based food IDs F0..F(N-1), Agent IDs and levels; actual
@@ -78,14 +99,15 @@ It excludes concurrency, pure_vlm_use_cache, timeout_seconds, parser_version,
 failure_policy and api_control_version, as requested. Valid labels are reused
 for all four PPO epochs. Student evaluation makes no teacher requests.
 
-The non-Go endpoint intermittently ignores native OFF and rejects effort=none.
-It therefore uses at most eight identical native OFF attempts; contradictory
-responses are audited and rejected, never cached. Exhaustion stops the run.
-This control retry count is separate from format and transport attempts.
-Thinking telemetry is optional at the gateway. Explicit nonzero reasoning
-usage or hidden reasoning content is rejected. Missing usage stays null with
-`thinking_evidence=not_reported`; explicit zero is `reported_zero`. Never describe
-missing telemetry as proof of zero internal reasoning. Retries for HTTP transport
+OFF is a request preference. Responses containing reasoning are accepted and
+cached on the first valid or numerically repairable all-agent JSON, without
+reasoning-control retries. Final `content` takes priority; when empty, JSON can
+be extracted from `reasoning_content`. Malformed final content cannot be replaced
+by an earlier draft. Returned reasoning is recorded as `returned_reasoning`;
+missing usage stays null with `thinking_evidence=not_reported`, and explicit zero
+is `reported_zero`. Never describe missing telemetry as proof of zero internal
+reasoning. Completed Soft used the prior stricter acceptance policy; this
+protocol difference must be disclosed in comparisons. Retries for HTTP transport
 are audited separately from the three format attempts; quota/auth failures do
 not become NONE or KD masks.
 

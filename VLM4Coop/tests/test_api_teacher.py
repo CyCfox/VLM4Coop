@@ -51,16 +51,16 @@ def test_http_failure_preserves_reason_and_redacts_echoed_secret(monkeypatch, tm
     assert json.loads(audit)['http_status'] == 403 and teacher.calls == 1
 
 
-def test_no_final_content_is_not_a_success(monkeypatch, tmp_path):
+def test_no_response_text_is_not_a_success(monkeypatch, tmp_path):
     teacher = make_teacher(monkeypatch, tmp_path)
     class Response:
         status, headers = 200, {}
         def __enter__(self): return self
         def __exit__(self, *args): pass
         def read(self):
-            return b'{"choices":[{"message":{"content":null,"reasoning_content":"thinking"},"finish_reason":"length"}]}'
+            return b'{"choices":[{"message":{"content":null,"reasoning_content":null},"finish_reason":"length"}]}'
     monkeypatch.setattr('vlm4coop.api_teacher.urlopen', lambda *args, **kwargs: Response())
-    with pytest.raises(ApiRequestError, match='no final text'):
+    with pytest.raises(ApiRequestError, match='no response text'):
         teacher.request('ping')
     assert 'valid_transport_completion' not in json.loads(teacher.audit_path.read_text())
 
@@ -127,14 +127,11 @@ def test_probe_returns_nonzero_and_keeps_failure_record(monkeypatch, tmp_path):
     assert result['formal'] is False and 'episodes' not in result
 
 
-def test_verified_off_falls_back_after_real_unsupported_none_error(monkeypatch, tmp_path):
+def test_requested_off_accepts_returned_reasoning_without_control_retry(monkeypatch, tmp_path):
     teacher = make_teacher(monkeypatch, tmp_path)
-    teacher.config.update(thinking={'type': 'disabled'}, reasoning_effort='none')
+    teacher.config.update(thinking={'type': 'disabled'})
     def fake_open(request, timeout):
         payload = json.loads(request.data)
-        if payload.get('reasoning_effort') == 'none':
-            raise HTTPError(request.full_url, 400, 'Bad Request', {}, io.BytesIO(
-                b'{"error":{"message":"none reasoning effort is not supported by deepseek-v4.1-flash model"}}'))
         assert payload['thinking']['type'] == 'disabled' and 'reasoning_effort' not in payload
         class Response:
             status, headers = 200, {}
@@ -142,20 +139,20 @@ def test_verified_off_falls_back_after_real_unsupported_none_error(monkeypatch, 
             def __exit__(self, *args): pass
             def read(self):
                 answer = json.dumps({'agents': [{'id': i, 'probs': [.1,.1,.1,.1,.1,.5]} for i in range(3)]})
-                return json.dumps({'id': 'accepted-test-response', 'choices': [{'message': {'content': answer}}],
-                    'usage': {'completion_tokens': 90, 'completion_tokens_details': {'reasoning_tokens': 0}}}).encode()
+                return json.dumps({'id': 'accepted-test-response', 'choices': [{'message': {'content': answer,'reasoning_content':'planning'}}],
+                    'usage': {'completion_tokens': 90, 'completion_tokens_details': {'reasoning_tokens': 10}}}).encode()
         return Response()
     monkeypatch.setattr('vlm4coop.api_teacher.urlopen', fake_open)
     result = teacher.predict(Image.new('RGB', (5,5)), 3, use_cache=False)
-    assert result.probs.shape == (3,6) and teacher.calls == 2
+    assert result.probs.shape == (3,6) and teacher.calls == 1
     label = json.loads((tmp_path / 'teacher_labels.jsonl').read_text())
-    assert label['reasoning_tokens'] == 0 and label['control_attempt'] == 1
+    assert label['reasoning_tokens'] == 10 and label['control_attempt'] == 0
     assert label['response_id'] == 'accepted-test-response'
 
 
-def test_off_policy_never_accepts_emitted_reasoning(monkeypatch, tmp_path):
+def test_invalid_json_with_reasoning_uses_format_fallback(monkeypatch, tmp_path):
     teacher = make_teacher(monkeypatch, tmp_path)
-    teacher.config.update(thinking={'type': 'disabled'}, reasoning_effort='none')
+    teacher.config.update(thinking={'type': 'disabled'})
     class Response:
         status, headers = 200, {}
         def __enter__(self): return self
@@ -163,9 +160,9 @@ def test_off_policy_never_accepts_emitted_reasoning(monkeypatch, tmp_path):
         def read(self):
             return b'{"choices":[{"message":{"content":"{}","reasoning_content":"still thinking"}}],"usage":{"completion_tokens_details":{"reasoning_tokens":10}}}'
     monkeypatch.setattr('vlm4coop.api_teacher.urlopen', lambda *args, **kwargs: Response())
-    with pytest.raises(ApiRequestError, match='verify thinking disabled'):
-        teacher.predict(Image.new('RGB', (5,5)), 3, use_cache=False)
-    assert teacher.calls == 2 and not (tmp_path / 'teacher_labels.jsonl').exists()
+    result=teacher.predict(Image.new('RGB', (5,5)), 3, use_cache=False)
+    assert result.source=='format_failure'
+    assert teacher.calls == 3 and not (tmp_path / 'teacher_labels.jsonl').exists()
 
 
 def test_off_policy_accepts_visible_reasoning_and_expands_system_agent_count(monkeypatch, tmp_path):

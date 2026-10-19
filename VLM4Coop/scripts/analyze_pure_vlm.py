@@ -8,7 +8,7 @@ import math
 import numpy as np
 from vlm4coop.metrics import summarize
 from vlm4coop.response_protocol import parse_api_probabilities, none_probabilities
-from vlm4coop.api_teacher import off_response_evidence
+from vlm4coop.api_teacher import off_response_evidence, completion_text
 from vlm4coop.training import _json_safe
 
 
@@ -73,11 +73,14 @@ def main():
         event=successful[label['response_id']]
         message=event['response']['choices'][0]['message']
         evidence=off_response_evidence(event['response'])
-        assert evidence!='contradicted' and label['thinking_evidence']==evidence
+        assert label['thinking_evidence']==evidence
         assert label['reasoning_tokens']==event['response'].get('usage',{}).get('completion_tokens_details',{}).get('reasoning_tokens')
-        assert not message.get('reasoning_content')
+        if label.get('control_mode')!='request_off_accept_returned_reasoning':
+            assert evidence!='returned_reasoning'
         assert event['thinking']=={'type':'disabled'} and event['top_p_requested']==.95
-        accepted.append(message['content'])
+        raw,answer_source=completion_text(event['response'])
+        if 'answer_source' in label: assert label['answer_source']==answer_source
+        accepted.append(raw)
     assert Counter(accepted)==Counter(row['raw'] for row in teacher_steps)
     failures=rows(run/'format_failures.jsonl')
     failed_counts=Counter(row['decision_id'] for row in failures)
@@ -99,6 +102,7 @@ def main():
         probability_cache_reads=0,probability_cache_writes=0,
         reported_zero_reasoning_labels=sum(label['thinking_evidence']=='reported_zero' for label in labels),
         reasoning_usage_unreported_labels=sum(label['thinking_evidence']=='not_reported' for label in labels),
+        returned_reasoning_labels=sum(label['thinking_evidence']=='returned_reasoning' for label in labels),
         none_fallback_decisions=len(fallback_steps),format_failures=len(failures),
         format_retries=status['format_retries'],
         http_status_counts=dict(Counter(str(row.get('http_status','transport_error')) for row in calls)),
@@ -121,7 +125,7 @@ def main():
         f"- Joint environment steps: {len(steps)}; HTTP attempts including retries/controls: {len(calls)}; peak active client requests: {status['peak_active_http_requests']}.\n"
         f"- Wall time: {status['wall_seconds']:.3f} s. Probability-cache reads/writes: 0/0.\n\n"
         f"- Format retries: {status['format_retries']}; all-agent NONE defaults after three failures: {len(fallback_steps)}. These defaults are controller actions, not model probability labels.\n\n"
-        f"- Thinking requested OFF for all accepted labels: {report['reported_zero_reasoning_labels']} explicitly report zero reasoning tokens; {report['reasoning_usage_unreported_labels']} omit this usage field. No accepted response contains hidden reasoning. Missing telemetry is not proof of zero internal reasoning.\n\n"
+        f"- Thinking requested OFF for all accepted labels: {report['reported_zero_reasoning_labels']} report zero reasoning tokens; {report['reasoning_usage_unreported_labels']} omit this usage field; {report['returned_reasoning_labels']} contain returned reasoning. Missing telemetry is not proof of zero internal reasoning.\n\n"
         'Means and sample standard deviations (ddof=1) are across episodes, not model training seeds. '
         'Missing success-time statistics are N/A (JSON null). '
         'Frozen v6 prompts, thinking explicitly requested disabled, top_p=0.95 requested, no client max_tokens, '

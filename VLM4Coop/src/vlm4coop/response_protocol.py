@@ -27,7 +27,7 @@ def parse_api_probabilities(raw, n_agents, purpose='distillation'):
         raise ValueError(purpose)
     if not isinstance(raw, str):
         raise ProbabilityFormatError('No final response text')
-    answer = raw.rsplit('</think>', 1)[-1].strip()
+    answer = raw.strip()
     decoder = json.JSONDecoder()
     obj, span, offset = None, (-1,-1), 0
     while offset < len(answer):

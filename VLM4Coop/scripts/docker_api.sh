@@ -2,7 +2,7 @@
 set -euo pipefail
 project_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 # stdin delivers the key to the container shell, never in docker args/config.
-exec docker run --rm -i --name "vlm4coop_api_$(date +%s)_cyc" \
+exec docker run --rm -i --sig-proxy=false --name "vlm4coop_api_$(date +%s)_cyc" \
   -u "$(id -u):$(id -g)" --cpus 4 --memory 8g \
   -v "$project_dir:/workspace/my_project:ro" \
   -v "$project_dir/VLM4Coop:/workspace/my_project/VLM4Coop:rw" \

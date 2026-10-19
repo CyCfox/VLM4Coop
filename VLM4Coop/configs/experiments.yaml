@@ -1,8 +1,9 @@
-protocol_status: user_authorized_soft_2026_10_18
+protocol_status: user_authorized_soft_hard_2026_10_19
 formal_authorized_methods:
 - mappo
 - pure_vlm
 - soft
+- hard
 runner: parallel
 batch_size_run: 10
 batch_size: 10
@@ -71,7 +72,7 @@ teacher:
   top_p: 0.95
   pure_vlm_use_cache: false
   backend: openai_api
-  parser_version: strict-schema-role-specific-v5
+  parser_version: strict-schema-role-specific-v6
   failure_policy:
     max_format_attempts: 3
     pure_vlm_fallback: all_agents_none

@@ -234,3 +234,38 @@ def test_eval_failure_preserves_completed_ppo_progress(monkeypatch, tmp_path):
     status = json.loads((output / 'status.json').read_text())
     assert status['status'] == 'failed'
     assert status['train_env_steps'] == status['sampled_env_steps'] == 1000
+
+
+def test_failed_second_teacher_batch_persists_current_counters(monkeypatch,tmp_path):
+    from types import SimpleNamespace
+    from vlm4coop import training
+    from vlm4coop.api_teacher import ApiRequestError
+    monkeypatch.setattr(training,'PROJECT',tmp_path)
+    class FailingTeacher:
+        config={'concurrency':1000}
+        calls=max_active_requests=format_failures=format_retries=0
+        thinking_control_retries=thinking_control_failures=failed_decisions=0
+        cache=SimpleNamespace(hits=0,misses=0,writes=0)
+        batches=0
+        def predict_many(self,images,n_agents):
+            self.batches+=1
+            if self.batches==1:
+                self.cache.hits=len(images)
+                return [TeacherResult(np.full((n_agents,6),1/6,dtype=np.float32),
+                    'SYNTHETIC CACHED LABEL',False,cache_hit=True) for _ in images]
+            self.calls,self.cache.misses,self.cache.writes=17,5,3
+            self.max_active_requests=5
+            self.thinking_control_retries,self.thinking_control_failures=7,8
+            raise ApiRequestError('synthetic OFF control exhaustion')
+    output=tmp_path/'teacher_failure'
+    teacher=FailingTeacher()
+    with pytest.raises(ApiRequestError,match='synthetic OFF'):
+        train('hard',3,0,'smoke',output,config=load_config(),teacher=teacher)
+    status=json.loads((output/'status.json').read_text())
+    assert status['status']=='failed' and status['phase']=='failed'
+    assert status['train_env_steps']==1000 and status['sampled_env_steps']==2000 and status['episodes']==10
+    assert status['teacher_calls']==17 and status['cache_misses']==5 and status['cache_writes']==3
+    assert status['peak_active_http_requests']==5
+    assert status['thinking_control_retries']==7 and status['rejected_thinking_responses']==8
+    assert len((output/'evaluations.jsonl').read_text().splitlines())==1
+    assert status['wall_seconds']>0

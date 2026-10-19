@@ -3,7 +3,7 @@ import argparse
 import json
 from pathlib import Path
 import numpy as np
-from vlm4coop.api_teacher import api_joint_prompt, api_system_prompt, build_api_cache_identity, off_response_evidence
+from vlm4coop.api_teacher import api_joint_prompt, api_system_prompt, build_api_cache_identity, off_response_evidence, completion_text
 from vlm4coop.config import PROJECT
 from vlm4coop.rendering import RENDERER_VERSION
 from vlm4coop.teacher import ProbabilityCache, TeacherResult, parse_probabilities
@@ -37,13 +37,15 @@ try:
             continue  # uncached Pure VLM labels must never be inserted into SQLite
         event = responses[label['response_id']]
         message = event['response']['choices'][0]['message']
-        raw = message['content']
+        raw,answer_source = completion_text(event['response'])
+        if 'answer_source' in label: assert label['answer_source']==answer_source
         expected_effort = config['teacher'].get('reasoning_effort', 'provider_default')
         if config['teacher']['thinking']['type'] == 'disabled':
             if label['control_attempt'] == 1 and label.get('control_mode') != 'native_off_retry':
                 expected_effort = 'provider_default' if expected_effort == 'none' else 'none'
             evidence = off_response_evidence(event['response'])
-            assert evidence != 'contradicted'
+            if label.get('control_mode')!='request_off_accept_returned_reasoning':
+                assert evidence != 'returned_reasoning'  # legacy labels required OFF evidence
             assert label['reasoning_tokens'] == event['response'].get('usage', {}).get('completion_tokens_details', {}).get('reasoning_tokens')
             if 'thinking_evidence' in label:
                 assert label['thinking_evidence'] == evidence

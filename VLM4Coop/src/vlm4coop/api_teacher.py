@@ -48,16 +48,26 @@ class ApiCompletionFormatError(ApiRequestError):
         self.response = response
 
 
-API_CONTROL_VERSION = 'off-native-paid-retry-v3'
+API_CONTROL_VERSION = 'requested-off-accept-valid-json-v4'
 
 
 def off_response_evidence(response):
-    """Preserve absent usage as unknown; reject any returned hidden reasoning."""
+    """Record returned reasoning honestly; this is not an acceptance gate."""
     message = response['choices'][0].get('message', {})
     tokens = response.get('usage', {}).get('completion_tokens_details', {}).get('reasoning_tokens')
     if message.get('reasoning_content') or tokens not in (None, 0):
-        return 'contradicted'
+        return 'returned_reasoning'
     return 'reported_zero' if tokens == 0 else 'not_reported'
+
+
+def completion_text(response):
+    """Prefer final content; reasoning-only replies may still contain valid JSON."""
+    message = response['choices'][0].get('message', {})
+    for source in ('content', 'reasoning_content'):
+        value = message.get(source)
+        if isinstance(value, str) and value.strip():
+            return value, source
+    raise ApiCompletionFormatError('API returned no response text; see saved usage/finish_reason', response)
 
 
 def build_api_cache_identity(config):
@@ -79,6 +89,7 @@ class OpenCodeTeacher:
         self.purpose = purpose
         self.format_failures = self.format_retries = self.failed_decisions = 0
         self.thinking_control_retries = self.thinking_control_failures = 0
+        self.responses_with_reasoning = 0
         self._invalid_cache_keys = set()
         self.audit_path = Path(audit_path)
         self.audit_path.parent.mkdir(parents=True, exist_ok=True)
@@ -98,14 +109,11 @@ class OpenCodeTeacher:
             purpose=purpose,max_format_attempts=3,
             fallback='all_agents_NONE' if purpose=='pure' else 'mask_distillation_only_keep_PPO',
             numeric_policy='strict_probability_validation' if purpose=='pure' else 'clip_each_entry_to_0_1_then_normalize'),indent=2))
-        # This paid route demonstrably rejects effort=none and intermittently
-        # ignores native OFF. Retry the identical native request, never accept
-        # the contradictory response or silently change the requested mode.
-        self.native_off_retries = config['endpoint'].rstrip('/') == 'https://opencode.ai/inference/openai/v1/chat/completions'
+        self.control_mode = 'request_off_accept_returned_reasoning'
         self.audit_path.with_name('thinking_control_policy.json').write_text(json.dumps(dict(
-            mode='identical_native_off_retries' if self.native_off_retries else 'native_then_effort_none',
-            max_attempts=8 if self.native_off_retries else 2,
-            accept_hidden_reasoning=False,control_version=API_CONTROL_VERSION),indent=2))
+            mode=self.control_mode,max_attempts=1,control_retries_enabled=False,
+            accept_hidden_reasoning=True,require_valid_probability_JSON=True,
+            control_version=API_CONTROL_VERSION),indent=2))
 
     def _safe(self, value):
         return json.loads(json.dumps(value, ensure_ascii=False).replace(self._key, '[REDACTED]'))
@@ -184,10 +192,10 @@ class OpenCodeTeacher:
             event['response'] = result
             if result.get('error') or not result.get('choices'):
                 raise ApiRequestError('API returned no completion choices')
-            message = result['choices'][0].get('message', {})
-            answer = message.get('content')
-            if not isinstance(answer, str) or not answer.strip():
-                raise ApiCompletionFormatError('API returned no final text; see saved usage/finish_reason', result)
+            if off_response_evidence(result)=='returned_reasoning':
+                with self._io_lock: self.responses_with_reasoning += 1
+            answer,source = completion_text(result)
+            event['answer_source'] = source
             event['valid_transport_completion'] = True
             return answer, result
         except HTTPError as exc:
@@ -239,49 +247,13 @@ class OpenCodeTeacher:
             self._invalid_cache_keys.discard(key)
 
     def _policy_response(self, image, n_agents, decision_id, format_attempt):
-        disabled = self.config.get('thinking',{}).get('type')=='disabled'
-        alternatives = [None]
-        if disabled:
-            if self.native_off_retries:
-                alternatives = [None] * 8
-            else:
-                alternatives.append({'reasoning_effort': None if self.config.get('reasoning_effort')=='none' else 'none'})
-        for control_attempt,parameters in enumerate(alternatives):
-            if control_attempt:
-                with self._io_lock: self.thinking_control_retries += 1
-            try:
-                raw,response=self.request(api_joint_prompt(n_agents),image=image,
-                    system=api_system_prompt(n_agents),parameters=parameters,
-                    label=f'policy_{n_agents}p_{decision_id}_format{format_attempt}_control{control_attempt}')
-            except ApiCompletionFormatError as exc:
-                if disabled and off_response_evidence(exc.response)=='contradicted':
-                    self._record_thinking_failure(exc.response,decision_id,format_attempt,control_attempt)
-                    if control_attempt+1 < len(alternatives): continue
-                    raise ApiRequestError('Could not verify thinking disabled after bounded gateway controls') from None
-                raise  # No contrary thinking evidence; empty text is a format failure.
-            except ApiRequestError as exc:
-                unsupported=(exc.status_code==400 and 'none reasoning effort is not supported' in (exc.response_body or '').lower())
-                if disabled and control_attempt==0 and unsupported: continue
-                raise
-            message=response['choices'][0]['message']
-            reasoning=response.get('usage',{}).get('completion_tokens_details',{}).get('reasoning_tokens')
-            if disabled and off_response_evidence(response)=='contradicted':
-                self._record_thinking_failure(response,decision_id,format_attempt,control_attempt)
-                if control_attempt+1 < len(alternatives): continue
-                raise ApiRequestError('Could not verify thinking disabled after bounded gateway controls')
-            return raw,response,reasoning,control_attempt
-        raise ApiRequestError('No usable policy response')
-
-    def _record_thinking_failure(self,response,decision_id,format_attempt,control_attempt):
-        message=response['choices'][0].get('message',{})
-        record=dict(decision_id=decision_id,format_attempt=format_attempt,control_attempt=control_attempt,
-            response_id=response.get('id'),
-            reasoning_tokens=response.get('usage',{}).get('completion_tokens_details',{}).get('reasoning_tokens'),
-            reasoning_content_characters=len(message.get('reasoning_content') or ''))
-        with self._io_lock:
-            self.thinking_control_failures+=1
-            with self.audit_path.with_name('thinking_control_failures.jsonl').open('a') as stream:
-                stream.write(json.dumps(record)+'\n')
+        # OFF is a request preference. Returned reasoning never spends another
+        # request by itself; only the probability parser decides usability.
+        raw,response=self.request(api_joint_prompt(n_agents),image=image,
+            system=api_system_prompt(n_agents),
+            label=f'policy_{n_agents}p_{decision_id}_format{format_attempt}_control0')
+        reasoning=response.get('usage',{}).get('completion_tokens_details',{}).get('reasoning_tokens')
+        return raw,response,reasoning,0
 
     def predict(self, image, n_agents, use_cache=True):
         key=self.cache.key(image,n_agents) if self.cache is not None else None
@@ -313,7 +285,7 @@ class OpenCodeTeacher:
                 thinking_evidence=(off_response_evidence(response)
                     if self.config.get('thinking',{}).get('type')=='disabled' else 'off_not_requested'),
                 control_attempt=control_attempt,control_version=API_CONTROL_VERSION,
-                control_mode='native_off_retry' if self.native_off_retries else 'native_then_effort_none',
+                control_mode=self.control_mode,answer_source=completion_text(response)[1],
                 decision_id=decision_id,format_attempts=format_attempt,purpose=self.purpose,
                 key=key,probabilities=probs.tolist(),repaired=repaired)
             with self._io_lock:

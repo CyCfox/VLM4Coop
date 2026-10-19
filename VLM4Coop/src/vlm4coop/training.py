@@ -44,6 +44,25 @@ def append_json(path, value):
         stream.write(json.dumps(_json_safe(value), allow_nan=False) + "\n")
 
 
+def teacher_status(teacher):
+    """Current counters, including when a teacher batch raises before PPO."""
+    if teacher is None:
+        return {}
+    cache = getattr(teacher, 'cache', None)
+    values = dict(teacher_calls=teacher.calls,
+        teacher_probability_cache_enabled=cache is not None,
+        peak_active_http_requests=getattr(teacher, 'max_active_requests', None),
+        format_failures=getattr(teacher, 'format_failures', 0),
+        format_retries=getattr(teacher, 'format_retries', 0),
+        thinking_control_retries=getattr(teacher, 'thinking_control_retries', 0),
+        rejected_thinking_responses=getattr(teacher, 'thinking_control_failures', 0),
+        teacher_responses_with_reasoning=getattr(teacher, 'responses_with_reasoning', 0),
+        teacher_format_failed_decisions=getattr(teacher, 'failed_decisions', 0))
+    if cache is not None:
+        values.update(cache_hits=cache.hits, cache_misses=cache.misses, cache_writes=cache.writes)
+    return values
+
+
 class JsonLogger:
     def __init__(self, path):
         self.path = path
@@ -230,6 +249,7 @@ def train(method, agents, seed, profile, output_dir, config=None, teacher=None):
     capture(output)
     start = time.monotonic()
     last_optimized_env_steps = 0
+    episode = 0
     (output / 'status.json').write_text(json.dumps(dict(status='running',
         train_env_steps=0, episodes=0, phase='initializing',
         teacher_probability_cache_requested=method!='mappo'), indent=2))
@@ -278,16 +298,7 @@ def train(method, agents, seed, profile, output_dir, config=None, teacher=None):
                 scheduled += config["eval_interval_steps"]
             status = {"status": "running", "train_env_steps": actual,
                       "episodes": episode, "wall_seconds": time.monotonic() - start}
-            if teacher is not None and teacher.cache is not None:
-                status.update(teacher_calls=teacher.calls, cache_hits=teacher.cache.hits,
-                              cache_misses=teacher.cache.misses, cache_writes=teacher.cache.writes,
-                              teacher_probability_cache_enabled=True,
-                              peak_active_http_requests=getattr(teacher,'max_active_requests',None),
-                              format_failures=getattr(teacher,'format_failures',0),
-                              format_retries=getattr(teacher,'format_retries',0),
-                              thinking_control_retries=getattr(teacher,'thinking_control_retries',0),
-                              rejected_thinking_responses=getattr(teacher,'thinking_control_failures',0),
-                              teacher_format_failed_decisions=getattr(teacher,'failed_decisions',0))
+            status.update(teacher_status(teacher))
             (output / "status.json").write_text(json.dumps(status, indent=2))
         status.update(status="complete", teacher_calls=teacher.calls if teacher else 0)
         (output / "status.json").write_text(json.dumps(status, indent=2))
@@ -296,9 +307,9 @@ def train(method, agents, seed, profile, output_dir, config=None, teacher=None):
         failed = json.loads((output / 'status.json').read_text()) if (output / 'status.json').exists() else {}
         failed.update(status='failed', error=repr(exc),
                       sampled_env_steps=train_runner.t_env if train_runner is not None else 0,
-                      train_env_steps=last_optimized_env_steps)
-        if teacher is not None:
-            failed['teacher_calls'] = teacher.calls
+                      train_env_steps=last_optimized_env_steps, episodes=episode,
+                      phase='failed', wall_seconds=time.monotonic()-start)
+        failed.update(teacher_status(teacher))
         (output / "status.json").write_text(json.dumps(failed, indent=2))
         raise
     finally:
