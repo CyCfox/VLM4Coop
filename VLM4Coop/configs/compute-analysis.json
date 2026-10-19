@@ -1,0 +1,9 @@
+{
+  "base": "pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime",
+  "runtime": "scripts/docker_analysis.sh",
+  "resources": {"cpus": 4, "memory_gib": 8, "gpus": 0},
+  "training_site": "runtime/site (read by wrapper; not modified)",
+  "additional_site": "runtime/analysis_site",
+  "pip_phases": [["matplotlib==3.10.7", "numpy==1.26.4", "Pillow==11.3.0"]],
+  "smoke": "scripts/analysis_preflight.py"
+}

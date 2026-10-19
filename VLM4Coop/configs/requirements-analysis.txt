@@ -1,0 +1,4 @@
+# Isolated plotting dependencies; never install into the active training site.
+matplotlib==3.10.7
+numpy==1.26.4
+Pillow==11.3.0

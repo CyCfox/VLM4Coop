@@ -1,0 +1,79 @@
+protocol_status: user_authorized_soft_2026_10_18
+formal_authorized_methods:
+- mappo
+- pure_vlm
+- soft
+runner: parallel
+batch_size_run: 10
+batch_size: 10
+buffer_size: 10
+epochs: 4
+formal_train_steps: 1000000
+smoke_train_steps: 2000
+pilot_train_steps: 20000
+eval_interval_steps: 1000
+eval_episodes_every_checkpoint: 100
+eval_parallel_envs: 10
+pure_vlm_parallel_envs: 100
+pure_vlm_concurrency: 100
+train_seeds:
+- 0
+training_seed_pool:
+  start: 0
+  count: 500
+  sampler_seed: 0
+  sampling: uniform_without_replacement_per_batch
+test_greedy: false
+fixed_eval_seeds:
+  start: 1000000
+  count: 100
+kd_lambda_initial: 10.0
+kd_lambda_plateau: 0.1
+kd_anneal_t1: 66000
+kd_anneal_t2: 100000
+kd_supervision_stride: 1
+cache_max_bytes: 2000000000
+retain_checkpoints: 10
+methods:
+- name: mappo
+  agents: 3
+- name: soft
+  agents: 3
+- name: hard
+  agents: 3
+- name: soft
+  agents: 4
+- name: soft
+  agents: 5
+environment:
+  field_size:
+  - 8
+  - 8
+  sight: 8
+  grid_observation: false
+  observe_agent_levels: true
+  min_player_level: 1
+  max_player_level: 3
+  min_food_level: 1
+  max_food_level: null
+  force_coop: false
+  normalize_reward: true
+  max_episode_steps: 100
+teacher:
+  endpoint: https://opencode.ai/inference/openai/v1/chat/completions
+  model: deepseek-v4.1-flash
+  max_tokens: null
+  thinking:
+    type: disabled
+  timeout_seconds: 600
+  prompt_version: joint-lbf-api-v6-user-explicit-reasoning-off
+  concurrency: 1000
+  top_p: 0.95
+  pure_vlm_use_cache: false
+  backend: openai_api
+  parser_version: strict-schema-role-specific-v5
+  failure_policy:
+    max_format_attempts: 3
+    pure_vlm_fallback: all_agents_none
+    distillation_numeric: clip_to_0_1_then_normalize
+    distillation_fallback: mask_KD_keep_PPO

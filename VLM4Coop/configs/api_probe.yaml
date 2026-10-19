@@ -1,0 +1,11 @@
+endpoint: https://opencode.ai/inference/go/openai/v1/chat/completions
+model: deepseek-v4.1-flash
+max_tokens: null
+thinking:
+  type: disabled
+timeout_seconds: 600
+profile: api_capability_probe
+prompt_version: joint-lbf-api-v6-user-explicit-reasoning-off
+concurrency: 1000
+top_p: 0.95
+pure_vlm_use_cache: false

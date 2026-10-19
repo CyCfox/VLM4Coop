@@ -1,0 +1,6 @@
+numpy==1.26.4
+gymnasium==1.2.3
+lbforaging==2.0.0
+Pillow==11.3.0
+pytest==8.4.2
+PyYAML==6.0.3

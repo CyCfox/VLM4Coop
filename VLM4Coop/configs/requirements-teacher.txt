@@ -1,0 +1,10 @@
+# Install in isolated project target using CUDA 11.8 torch wheels first.
+torch==2.6.0+cu118
+torchvision==0.21.0+cu118
+transformers==5.3.0
+accelerate==1.12.0
+# Optional inference kernels, installed --no-deps to preserve selected torch.
+fla-core==0.3.2
+flash-linear-attention==0.3.2
+einops==0.8.1
+lm-format-enforcer==0.11.3

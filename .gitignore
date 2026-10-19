@@ -1,0 +1,48 @@
+# Ignore everything at the project root unless explicitly listed below.
+/*
+!/.gitignore
+!/README.md
+!/tests/
+!/VLM4Coop/
+
+# Keep only the reproducible implementation and documentation.
+/VLM4Coop/*
+!/VLM4Coop/src/
+!/VLM4Coop/configs/
+!/VLM4Coop/scripts/
+!/VLM4Coop/tests/
+!/VLM4Coop/README.md
+
+# Generated files, including those inside the allowed directories.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.venv/
+venv/
+*.log
+*.sqlite
+*.sqlite-*
+*.pt
+*.pth
+*.th
+*.ckpt
+
+# Credentials and local environment files must stay private.
+.env
+.env.*
+*.key
+*.pem
+credentials.json
+credentials.*.json
+secrets.json
+secrets.yaml
+secrets.yml
+
+# Editor and operating-system files.
+.vscode/
+.idea/
+.DS_Store
+*~

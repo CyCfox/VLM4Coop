@@ -1,0 +1,57 @@
+# Authoritative formal values from VLM4Coop_Experiment_Plan.md (2026-10-17).
+protocol_status: user_resolved_2026_10_17
+runner: parallel
+batch_size_run: 10
+batch_size: 10
+buffer_size: 10
+epochs: 4
+formal_train_steps: 200000
+smoke_train_steps: 2000
+pilot_train_steps: 20000
+eval_interval_steps: 1000
+eval_episodes_every_checkpoint: 100
+eval_parallel_envs: 10
+train_seeds: [0]
+test_greedy: false
+fixed_eval_seeds: {start: 1000000, count: 100}
+kd_lambda_initial: 10.0
+kd_lambda_plateau: 0.1
+kd_anneal_t1: 66000
+kd_anneal_t2: 100000
+kd_supervision_stride: 1
+cache_max_bytes: 2000000000
+retain_checkpoints: 10
+methods:
+  - {name: mappo, agents: 3}
+  - {name: soft, agents: 3}
+  - {name: hard, agents: 3}
+  - {name: soft, agents: 4}
+  - {name: soft, agents: 5}
+# No additional ablation families; soft/3 is reused in all three experiments.
+environment:
+  field_size: [10, 10]
+  sight: 10
+  grid_observation: false
+  observe_agent_levels: true
+  min_player_level: 1
+  max_player_level: 3
+  min_food_level: 1
+  max_food_level: null
+  force_coop: false
+  normalize_reward: true
+  max_episode_steps: 100
+teacher:
+  host_model_path: /media/data/chenyuchen/models/Qwen3.5-4B
+  model_path: /workspace/models/Qwen3.5-4B
+  dtype: bfloat16
+  device: cuda:0
+  do_sample: false
+  enable_thinking: true
+  max_new_tokens: 2048
+  thinking_budget_tokens: 256
+  batch_size: 1
+  prompt_version: joint-lbf-v5-budget256-json
+  output_format: matrix-json-regex-v1
+  probability_decimals: 3
+  parser_version: strict-repair-v1
+  failure_policy: repair_identifiable_maximum_else_fail
