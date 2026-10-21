@@ -4,12 +4,14 @@ import json
 import numpy as np
 import torch
 import pytest
-from vlm4coop.config import load_config, make_args
-from vlm4coop.environment import register_lbf, CoopGymmaWrapper
-from vlm4coop.training import setup_runner, annotate, train
-from vlm4coop.teacher import TeacherResult
+from vlm4coop.training.configuration import load_config, make_args
+from vlm4coop.envs.lbf.adapter import register_lbf, CoopGymmaWrapper
+from vlm4coop.training.setup import setup_runner
+from vlm4coop.training.annotation import annotate
+from vlm4coop.training.loop import train
+from vlm4coop.teachers.interfaces import TeacherResult
 from learners.ppo_learner import PPOLearner
-from vlm4coop.learner import CoopPPOLearner
+from vlm4coop.algorithms.mappo import CoopPPOLearner
 
 
 class Log:
@@ -177,7 +179,7 @@ def test_frames_and_teacher_labels_once_per_real_state():
 
 def test_evaluation_rng_isolation():
     import random
-    from vlm4coop.training import evaluation_rng
+    from vlm4coop.utils.rng import evaluation_rng
     random.seed(11)
     np.random.seed(11)
     torch.manual_seed(11)
@@ -195,8 +197,8 @@ def test_evaluation_rng_isolation():
 
 
 def test_full_fixed_evaluation_and_pure_teacher_control(tmp_path):
-    from vlm4coop.pure_vlm import TeacherMAC
-    from vlm4coop.training import evaluate
+    from vlm4coop.evaluation.pure_vlm import TeacherMAC
+    from vlm4coop.evaluation.evaluator import evaluate
 
     class FixedActionTeacher(SyntheticTeacher):
         def predict(self, image, n_agents, use_cache=True):
@@ -222,7 +224,7 @@ def test_full_fixed_evaluation_and_pure_teacher_control(tmp_path):
 
 
 def test_eval_failure_preserves_completed_ppo_progress(monkeypatch, tmp_path):
-    from vlm4coop import training
+    from vlm4coop.training import loop as training
     config = load_config()
     monkeypatch.setattr(training, 'PROJECT', tmp_path)
     def unavailable_eval(*args, **kwargs):
@@ -238,8 +240,8 @@ def test_eval_failure_preserves_completed_ppo_progress(monkeypatch, tmp_path):
 
 def test_failed_second_teacher_batch_persists_current_counters(monkeypatch,tmp_path):
     from types import SimpleNamespace
-    from vlm4coop import training
-    from vlm4coop.api_teacher import ApiRequestError
+    from vlm4coop.training import loop as training
+    from vlm4coop.teachers.api import ApiRequestError
     monkeypatch.setattr(training,'PROJECT',tmp_path)
     class FailingTeacher:
         config={'concurrency':1000}

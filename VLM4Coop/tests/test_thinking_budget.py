@@ -1,6 +1,6 @@
 """Mechanism checks only: the user-authorized primitive never supplies actions/probabilities."""
 import torch
-from vlm4coop.thinking_budget import ThinkingBudget
+from vlm4coop.teachers.thinking_budget import ThinkingBudget
 
 
 def test_budget_does_not_force_actions_or_change_completed_reasoning():

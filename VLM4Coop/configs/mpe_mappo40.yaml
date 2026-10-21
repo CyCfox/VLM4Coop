@@ -1,0 +1,78 @@
+protocol_status: user_authorized_MPE_MAPPO40_1000k_2026_10_20
+formal_authorized_methods:
+- mappo
+runner: parallel
+batch_size_run: 40
+batch_size: 40
+buffer_size: 40
+epochs: 4
+formal_train_steps: 1000000
+smoke_train_steps: 1000
+pilot_train_steps: 20000
+eval_interval_steps: 1000
+eval_episodes_every_checkpoint: 100
+eval_parallel_envs: 10
+pure_vlm_parallel_envs: 10
+pure_vlm_concurrency: 1000
+train_seeds:
+- 0
+training_seed_pool:
+  start: 0
+  count: 500
+  sampler_seed: 0
+  sampling: uniform_without_replacement_per_batch
+test_greedy: false
+fixed_eval_seeds:
+  start: 1000000
+  count: 100
+kd_lambda_initial: 10.0
+kd_lambda_plateau: 0.1
+kd_anneal_t1: 66000
+kd_anneal_t2: 100000
+kd_supervision_stride: 1
+cache_max_bytes: 2000000000
+retain_checkpoints: 10
+methods:
+- name: mappo
+  agents: 3
+- name: soft
+  agents: 3
+- name: hard
+  agents: 3
+- name: pure_vlm
+  agents: 3
+environment:
+  N: 3
+  local_ratio: 0.5
+  max_episode_steps: 25
+  remove_communication: true
+  coverage_threshold: 0.1
+teacher:
+  endpoint: https://opencode.ai/inference/openai/v1/chat/completions
+  model: deepseek-v4.1-flash
+  max_tokens: null
+  thinking:
+    type: disabled
+  chat_template_kwargs:
+    thinking: false
+    enable_thinking: false
+  reasoning_guard:
+    startup_clean_responses: 3
+    window: 100
+    max_reasoning_responses: 1
+    max_in_flight: 20
+  timeout_seconds: 600
+  prompt_version: mpe-spread-3p-user-exact-cooperation-v6
+  concurrency: 1000
+  top_p: 0.95
+  pure_vlm_use_cache: false
+  backend: openai_api
+  parser_version: strict-schema-role-specific-v6
+  failure_policy:
+    max_format_attempts: 3
+    pure_vlm_fallback: all_agents_none
+    distillation_numeric: clip_to_0_1_then_normalize
+    distillation_fallback: mask_KD_keep_PPO
+environment_adapter: mpe_simple_spread
+protocol_document: reports/mappo_mpe_batch40_20261020/PROTOCOL.md
+derived_from: configs/mpe_spread.yaml

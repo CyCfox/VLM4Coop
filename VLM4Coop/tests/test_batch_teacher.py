@@ -2,8 +2,9 @@
 from pathlib import Path
 from PIL import Image
 import numpy as np
-from vlm4coop.batched_teacher import BatchedQwenTeacher
-from vlm4coop.teacher import ProbabilityCache, TeacherResult
+from vlm4coop.teachers.batched_local import BatchedQwenTeacher
+from vlm4coop.teachers.cache import ProbabilityCache
+from vlm4coop.teachers.interfaces import TeacherResult
 
 
 def test_cached_batch_order_and_duplicate_state_alignment(tmp_path):

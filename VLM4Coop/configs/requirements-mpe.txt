@@ -1,0 +1,3 @@
+# Extra isolated layer over the existing CPU runtime; install with --no-deps.
+# Includes the original PettingZoo MPE version used by EPyMARL's pz-mpe keys.
+pettingzoo==1.24.3

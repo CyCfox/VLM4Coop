@@ -4,9 +4,11 @@ import numpy as np
 import pytest
 import torch
 from PIL import Image
-from vlm4coop.distillation import kd_weight, distillation_loss
-from vlm4coop.metrics import summarize
-from vlm4coop.teacher import ProbabilityCache, TeacherResult, parse_probabilities
+from vlm4coop.algorithms.distillation import kd_weight, distillation_loss
+from vlm4coop.evaluation.metrics import summarize
+from vlm4coop.teachers.cache import ProbabilityCache
+from vlm4coop.teachers.interfaces import TeacherResult
+from vlm4coop.teachers.legacy_parser import parse_probabilities
 
 
 def raw(rows):

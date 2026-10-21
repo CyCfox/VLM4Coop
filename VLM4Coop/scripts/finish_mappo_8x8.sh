@@ -25,8 +25,8 @@ if [[ $(< "$exit_file") != 0 ]]; then
   echo "Training exited unsuccessfully; see $exit_file and the original log" >&2
   exit 1
 fi
-VLM4Coop/scripts/docker_cpu.sh python VLM4Coop/scripts/validate_outputs.py "$run_dir"
-VLM4Coop/scripts/docker_analysis.sh python VLM4Coop/scripts/summarize_mappo.py "$run_dir" \
+VLM4Coop/scripts/docker_cpu.sh python -m vlm4coop.cli.validation.validate_outputs "$run_dir"
+VLM4Coop/scripts/docker_analysis.sh python -m vlm4coop.cli.analysis.summarize_mappo "$run_dir" \
   --output "${run_dir}_analysis"
 VLM4Coop/scripts/docker_cpu.sh python -c '
 import json

@@ -27,9 +27,9 @@ p.write_text(json.dumps(s, indent=2)+"\n")
   exit 1
 fi
 for key in soft_3 hard_3 soft_4 soft_5 pure_vlm_3; do
-  VLM4Coop/scripts/docker_cpu.sh python VLM4Coop/scripts/validate_outputs.py "$suite_dir/$key"
+  VLM4Coop/scripts/docker_cpu.sh python -m vlm4coop.cli.validation.validate_outputs "$suite_dir/$key"
 done
-VLM4Coop/scripts/docker_analysis.sh python -m vlm4coop.analysis \
+VLM4Coop/scripts/docker_analysis.sh python -m vlm4coop.evaluation.analysis \
   --runs "$suite_dir/runs.json" --output "${suite_dir}_analysis"
 {
   printf '\n## %s Go正式队列自动收尾完成\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"

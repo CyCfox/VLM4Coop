@@ -6,8 +6,9 @@ import threading
 from types import SimpleNamespace
 import numpy as np
 from PIL import Image
-from vlm4coop.api_teacher import OpenCodeTeacher
-from vlm4coop.teacher import ProbabilityCache, TeacherResult
+from vlm4coop.teachers.api import OpenCodeTeacher
+from vlm4coop.teachers.cache import ProbabilityCache
+from vlm4coop.teachers.interfaces import TeacherResult
 
 
 def test_parallel_single_image_requests_and_main_thread_cache(monkeypatch, tmp_path):
@@ -36,7 +37,7 @@ def test_parallel_single_image_requests_and_main_thread_cache(monkeypatch, tmp_p
                     'choices':[{'message':{'content':answer,'reasoning_content':'x'*25000}}],
                     'usage':{'completion_tokens':100,'completion_tokens_details':{'reasoning_tokens':20}}}).encode()
         return Response()
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen', fake_open)
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen', fake_open)
     images = [Image.new('RGB',(4,4),name) for name in ('red','green','red')]
     result = teacher.predict_many(images,3)
     assert [x.probs.argmax(-1).tolist() for x in result] == [[1]*3,[4]*3,[1]*3]
@@ -50,7 +51,7 @@ def test_parallel_single_image_requests_and_main_thread_cache(monkeypatch, tmp_p
 
 
 def test_pure_batch_duplicates_still_make_real_calls(monkeypatch, tmp_path):
-    from vlm4coop.api_batch import predict_many
+    from vlm4coop.teachers.api_batch import predict_many
     image = Image.new('RGB',(4,4),'red')
     cache = ProbabilityCache(tmp_path / 'labels.sqlite', {'test':'pure'})
     p = np.zeros((3,6),np.float32); p[:,2]=1
@@ -68,7 +69,7 @@ def test_pure_batch_duplicates_still_make_real_calls(monkeypatch, tmp_path):
 
 
 def test_pure_mac_batch_keeps_worker_order_and_skips_terminal_images():
-    from vlm4coop.pure_vlm import TeacherMAC
+    from vlm4coop.evaluation.pure_vlm import TeacherMAC
     class Teacher:
         def predict_many(self,images,n_agents,use_cache):
             assert use_cache is True and len(images) == 2
@@ -88,7 +89,7 @@ def test_pure_mac_batch_keeps_worker_order_and_skips_terminal_images():
 
 
 def test_one_hundred_concurrent_cache_misses_then_all_hits(tmp_path):
-    from vlm4coop.api_batch import predict_many
+    from vlm4coop.teachers.api_batch import predict_many
     cache = ProbabilityCache(tmp_path / 'hundred.sqlite', {'test': 'hundred'})
     barrier = threading.Barrier(100)
     images = [Image.new('RGB', (2, 2), (i, 0, 0)) for i in range(100)]
@@ -110,8 +111,8 @@ def test_one_hundred_concurrent_cache_misses_then_all_hits(tmp_path):
 
 
 def test_pure_mac_uses_persistent_cache_and_deduplicates(tmp_path):
-    from vlm4coop.api_batch import predict_many
-    from vlm4coop.pure_vlm import TeacherMAC
+    from vlm4coop.teachers.api_batch import predict_many
+    from vlm4coop.evaluation.pure_vlm import TeacherMAC
     image = Image.new('RGB', (4, 4), 'blue')
     cache = ProbabilityCache(tmp_path / 'pure.sqlite', {'test': 'pure-cache'})
     p = np.zeros((3, 6), np.float32); p[:, 5] = 1
@@ -132,8 +133,8 @@ def test_pure_mac_uses_persistent_cache_and_deduplicates(tmp_path):
 
 
 def test_pure_mac_without_cache_requests_duplicate_images_again():
-    from vlm4coop.api_batch import predict_many
-    from vlm4coop.pure_vlm import TeacherMAC
+    from vlm4coop.teachers.api_batch import predict_many
+    from vlm4coop.evaluation.pure_vlm import TeacherMAC
     image = np.asarray(Image.new('RGB', (4, 4), 'blue'))
     class Teacher:
         config = {'concurrency': 2, 'pure_vlm_use_cache': False}
@@ -155,15 +156,16 @@ def test_pure_mac_without_cache_requests_duplicate_images_again():
 
 
 def test_uncached_factory_never_opens_sqlite(monkeypatch, tmp_path):
-    from vlm4coop.training import make_teacher
+    from vlm4coop.teachers.factory import make_teacher
     class Teacher:
-        def __init__(self, config, audit_path, cache, purpose):
+        def __init__(self, config, audit_path, cache, purpose, protocol):
             assert cache is None
+            assert protocol.n_actions == 6
             self.cache = cache
     def forbidden(*args, **kwargs):
         raise AssertionError('Pure VLM without cache must never open SQLite')
-    monkeypatch.setattr('vlm4coop.training.ProbabilityCache', forbidden)
-    monkeypatch.setattr('vlm4coop.api_teacher.OpenCodeTeacher', Teacher)
+    monkeypatch.setattr('vlm4coop.teachers.factory.ProbabilityCache', forbidden)
+    monkeypatch.setattr('vlm4coop.teachers.api.OpenCodeTeacher', Teacher)
     result = make_teacher({'teacher': {'backend':'openai_api'}, 'cache_max_bytes':1000},
                           tmp_path, use_cache=False)
     assert result.cache is None
@@ -171,7 +173,7 @@ def test_uncached_factory_never_opens_sqlite(monkeypatch, tmp_path):
 
 def test_parallel_failure_still_caches_every_success(tmp_path):
     import pytest
-    from vlm4coop.api_batch import predict_many
+    from vlm4coop.teachers.api_batch import predict_many
     cache = ProbabilityCache(tmp_path / 'partial.sqlite', {'test': 'partial'})
     images = [Image.new('RGB', (2, 2), (i, 0, 0)) for i in range(4)]
     def predict(image, n_agents, use_cache):
@@ -191,7 +193,7 @@ def test_parallel_failure_still_caches_every_success(tmp_path):
 
 
 def test_one_thousand_worker_capacity_and_cache_persistence(tmp_path):
-    from vlm4coop.api_batch import predict_many
+    from vlm4coop.teachers.api_batch import predict_many
     cache = ProbabilityCache(tmp_path/'thousand.sqlite', {'test': '1000-capacity'})
     barrier = threading.Barrier(1000)
     images = [Image.new('RGB', (2, 2), (i//256, i%256, 0)) for i in range(1000)]

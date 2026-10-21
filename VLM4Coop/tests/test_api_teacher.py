@@ -4,7 +4,7 @@ import json
 from urllib.error import HTTPError
 import pytest
 from PIL import Image
-from vlm4coop.api_teacher import OpenCodeTeacher, ApiRequestError
+from vlm4coop.teachers.api import OpenCodeTeacher, ApiRequestError
 
 
 def make_teacher(monkeypatch, tmp_path):
@@ -30,7 +30,7 @@ def test_image_contract_and_no_credentials_in_audit(monkeypatch, tmp_path):
                 return json.dumps({'model': 'actual-test-model', 'choices': [
                     {'message': {'content': 'OK'}, 'finish_reason': 'stop'}]}).encode()
         return Response()
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen', fake_open)
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen', fake_open)
     text, response = teacher.request('read image', Image.new('RGB', (5, 5)))
     assert text == 'OK' and response['model'] == 'actual-test-model'
     audit = teacher.audit_path.read_text()
@@ -43,7 +43,7 @@ def test_http_failure_preserves_reason_and_redacts_echoed_secret(monkeypatch, tm
     def fake_open(request, timeout):
         raise HTTPError(request.full_url, 403, 'Forbidden', {},
                         io.BytesIO(b'{"error":"FreeTierError TEST-CREDENTIAL-ONLY"}'))
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen', fake_open)
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen', fake_open)
     with pytest.raises(ApiRequestError, match='403'):
         teacher.request('ping')
     audit = teacher.audit_path.read_text()
@@ -59,7 +59,7 @@ def test_no_response_text_is_not_a_success(monkeypatch, tmp_path):
         def __exit__(self, *args): pass
         def read(self):
             return b'{"choices":[{"message":{"content":null,"reasoning_content":null},"finish_reason":"length"}]}'
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen', lambda *args, **kwargs: Response())
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen', lambda *args, **kwargs: Response())
     with pytest.raises(ApiRequestError, match='no response text'):
         teacher.request('ping')
     assert 'valid_transport_completion' not in json.loads(teacher.audit_path.read_text())
@@ -78,7 +78,7 @@ def test_native_thinking_options_are_sent_and_audited(monkeypatch, tmp_path):
             def __exit__(self, *args): pass
             def read(self): return b'{"choices":[{"message":{"content":"OK"}}]}'
         return Response()
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen', fake_open)
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen', fake_open)
     teacher.request('ping')
     event = json.loads(teacher.audit_path.read_text())
     assert event['reasoning_effort'] == 'low' and event['thinking']['type'] == 'enabled'
@@ -97,7 +97,7 @@ def test_provider_budget_omits_client_token_and_effort_limits(monkeypatch, tmp_p
             def __exit__(self, *args): pass
             def read(self): return b'{"choices":[{"message":{"content":"OK"}}]}'
         return Response()
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen', fake_open)
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen', fake_open)
     teacher.request('ping')
     assert json.loads(teacher.audit_path.read_text())['max_tokens'] is None
 
@@ -106,10 +106,7 @@ def test_probe_returns_nonzero_and_keeps_failure_record(monkeypatch, tmp_path):
     import importlib.util
     from pathlib import Path
     import sys
-    script = Path(__file__).resolve().parents[1] / 'scripts/api_teacher_probe.py'
-    spec = importlib.util.spec_from_file_location('api_probe_test_module', script)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    from vlm4coop.cli.probes import api_teacher_probe as module
     (tmp_path / 'configs').mkdir()
     (tmp_path / 'results').mkdir()
     (tmp_path / 'configs/api_probe.yaml').write_text('model: test-only\n')
@@ -119,7 +116,7 @@ def test_probe_returns_nonzero_and_keeps_failure_record(monkeypatch, tmp_path):
         def request(self, *args, **kwargs): raise ApiRequestError('test network unavailable')
     monkeypatch.setattr(module, 'PROJECT', tmp_path)
     monkeypatch.setattr(module, 'OpenCodeTeacher', UnavailableTeacher)
-    monkeypatch.setattr(sys, 'argv', [str(script), '--episodes', '1'])
+    monkeypatch.setattr(sys, 'argv', [module.__file__, '--episodes', '1'])
     assert module.run() == 1
     summaries = list((tmp_path / 'results').glob('*/summary.json'))
     result = json.loads(summaries[0].read_text())
@@ -142,7 +139,7 @@ def test_requested_off_accepts_returned_reasoning_without_control_retry(monkeypa
                 return json.dumps({'id': 'accepted-test-response', 'choices': [{'message': {'content': answer,'reasoning_content':'planning'}}],
                     'usage': {'completion_tokens': 90, 'completion_tokens_details': {'reasoning_tokens': 10}}}).encode()
         return Response()
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen', fake_open)
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen', fake_open)
     result = teacher.predict(Image.new('RGB', (5,5)), 3, use_cache=False)
     assert result.probs.shape == (3,6) and teacher.calls == 1
     label = json.loads((tmp_path / 'teacher_labels.jsonl').read_text())
@@ -159,14 +156,14 @@ def test_invalid_json_with_reasoning_uses_format_fallback(monkeypatch, tmp_path)
         def __exit__(self, *args): pass
         def read(self):
             return b'{"choices":[{"message":{"content":"{}","reasoning_content":"still thinking"}}],"usage":{"completion_tokens_details":{"reasoning_tokens":10}}}'
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen', lambda *args, **kwargs: Response())
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen', lambda *args, **kwargs: Response())
     result=teacher.predict(Image.new('RGB', (5,5)), 3, use_cache=False)
     assert result.source=='format_failure'
     assert teacher.calls == 3 and not (tmp_path / 'teacher_labels.jsonl').exists()
 
 
 def test_off_policy_accepts_visible_reasoning_and_expands_system_agent_count(monkeypatch, tmp_path):
-    from vlm4coop.api_teacher import api_system_prompt
+    from vlm4coop.teachers.api import api_system_prompt
     teacher = make_teacher(monkeypatch, tmp_path)
     teacher.config.update(thinking={'type': 'disabled'})
     def fake_open(request, timeout):
@@ -184,7 +181,7 @@ def test_off_policy_accepts_visible_reasoning_and_expands_system_agent_count(mon
                 return json.dumps({'id':'visible-reasoning-test', 'choices':[{'message':{'content':answer}}],
                     'usage':{'completion_tokens_details':{'reasoning_tokens':0}}}).encode()
         return Response()
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen', fake_open)
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen', fake_open)
     result = teacher.predict(Image.new('RGB',(5,5)),3,use_cache=False)
     assert result.probs.argmax(-1).tolist()==[5,5,5]
     assert result.raw.startswith('A0 and A1') and not result.repaired
@@ -204,8 +201,8 @@ def test_503_retries_are_bounded_and_preserve_student_rng(monkeypatch, tmp_path)
             def __exit__(self, *args): pass
             def read(self): return b'{"choices":[{"message":{"content":"OK"}}]}'
         return Response()
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen', fake_open)
-    monkeypatch.setattr('vlm4coop.api_teacher.time.sleep', sleeps.append)
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen', fake_open)
+    monkeypatch.setattr('vlm4coop.teachers.api.time.sleep', sleeps.append)
     random.seed(2026); before = random.getstate()
     assert teacher.request('ping')[0] == 'OK'
     assert random.getstate() == before
@@ -220,8 +217,8 @@ def test_persistent_503_stops_after_five_attempts(monkeypatch, tmp_path):
     teacher = make_teacher(monkeypatch, tmp_path)
     def fail(request, timeout):
         raise HTTPError(request.full_url, 503, 'Unavailable', {}, io.BytesIO(b''))
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen', fail)
-    monkeypatch.setattr('vlm4coop.api_teacher.time.sleep', lambda delay: None)
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen', fail)
+    monkeypatch.setattr('vlm4coop.teachers.api.time.sleep', lambda delay: None)
     with pytest.raises(ApiRequestError, match='503'):
         teacher.request('ping')
     assert teacher.calls == 5 and teacher.active_requests == 0
@@ -238,15 +235,15 @@ def test_top_p_is_sent_and_audited(monkeypatch, tmp_path):
             def __exit__(self, *args): pass
             def read(self): return b'{"choices":[{"message":{"content":"OK"}}]}'
         return Response()
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen', fake_open)
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen', fake_open)
     teacher.request('ping')
     assert json.loads(teacher.audit_path.read_text())['top_p_requested'] == .95
 
 
 def test_api_cache_identity_ignores_operations_but_separates_top_p(tmp_path):
     from copy import deepcopy
-    from vlm4coop.api_teacher import build_api_cache_identity
-    from vlm4coop.teacher import ProbabilityCache
+    from vlm4coop.teachers.api import build_api_cache_identity
+    from vlm4coop.teachers.cache import ProbabilityCache
     config = dict(endpoint='https://example.invalid/chat/completions', model='test',
         top_p=.95, concurrency=100, pure_vlm_use_cache=True, timeout_seconds=600,
         parser_version='v1', failure_policy='repair', api_control_version='old')

@@ -5,7 +5,109 @@ installation, tests, training and inference run inside Docker. New artifacts sta
 under this directory; the root Chinese `CODEX_CHECKPOINT.md` is the required
 handoff exception. Preserve every existing run, checkpoint and raw response.
 
-## Current status — 2026-10-19
+## Current status — 2026-10-20
+
+The authorized MPE VLM4Coop Soft formal run is now running in
+`results/soft_mpe_spread_fixed500_1000k_api_20261020_01`:1Mstep budget,
+40complete25step environments/batch,4PPO epochs and100fixed-scene evaluation
+every1000steps,500training scenes,API concurrency/guard ceiling1000, OFF and
+cache-first. Existing KD schedule disables teacher queries and KD at update
+step100000 (last annotated update99000); MAPPO continues afterward.
+Five Docker regressions and one8state real-API/cache integration preflight
+passed. Only startup metadata was checked; completion is not assumed.
+[Protocol and execution evidence](reports/mpe_soft1000_20261020/VALIDATION.md).
+The same container will validate raw records and automatically export curves.
+At the user-requested runtime check, it was still awaiting the first teacher
+batch:40episodes sampled,0PPO/evaluations;976accepted labels persisted,
+18HTTP429 records and16network-wait threads. Missing evaluations.jsonl at
+that point did not indicate container exit. See the validation report snapshot.
+
+The user-authorized MPE MAPPO40 rerun completed and passed raw-log validation:
+`results/mappo_mpe_spread_fixed500_1000k_batch40_20261020_03`. It trained exactly
+1,000,000 joint steps (40,000 complete episodes), using40parallel environments
+and25steps per episode, with4PPO epochs and100fixed-scene evaluation every1000
+training steps. All1000 evaluations were exported, with seed-pool replay and
+train/test isolation verified. Final native team return is−57.79±15.21
+(100episodes, sampleSD); final all-three coverage is0/100. Automatic
+[learning curves](results/mappo_mpe_spread_fixed500_1000k_batch40_20261020_03_analysis/learning_curves.png)
+and CSV/PDF/SVG are available. [Execution and validation](reports/mappo_mpe_batch40_20261020/VALIDATION.md).
+
+The MPE Pure VLM formal evaluation also completed and passed native/RGB replay:
+`results/pure_vlm_mpe_100_uncached_20261020_01`,100fixed scenes×25steps,
+100configured HTTP concurrency,2500decisions/2514HTTP attempts, no probability
+cache and reported reasoning tokens0. Native return is−46.28±14.84 (episode
+sampleSD), final all-three coverage0/100. [Verified report](results/pure_vlm_mpe_100_uncached_20261020_01/REPORT.md).
+The new Soft run above is active; MAPPO40 and Pure100 remain completed.
+Dedicated configs authorize only their respective methods; the base config
+remains paused. Prior runs and their frozen protocols are preserved.
+
+The current OFF teacher completed the authorized3environment×25step uncached
+capability probe in78.86s. All75HTTP responses were200, contained valid labels
+without retries, and reported0reasoning tokens. Final covered landmarks were
+0/3,0/3,1/3; final and ever-all-covered success were both0/3episodes. Native
+return was−38.80±10.54 (episode sampleSD,n=3). All75native steps/RGB inputs were
+replayed offline. The teacher approached goals but still misread some velocity
+directions and coverage. See [actual capability report](results/mpe_teacher_off_capability_20261020_01/analysis/CAPABILITY_REPORT.md).
+This is a small probe; it is separate from the completed formal runs above.
+
+The user's exact MPE teacher system/user prompts are installed. One authorized
+uncached capability probe completed: three parallel environments,25steps each,
+seeds1000000..1000002 in `results/mpe_teacher_user_prompt_real_20261020_01`.
+It returned reasoning in74/75 requests despite requestedOFF. The new template
+OFF control passed6/6 real image calls with reported0 reasoning tokens.
+No formal student/teacher training was resumed. See
+[probe protocol](reports/mpe_teacher_probe_20261020/PROTOCOL.md).
+
+The MPE formal standard is now:
+after each forty complete25-step episodes (1000joint training steps), perform one
+four-epoch PPO update; evaluate100fixed scenarios every1000training steps.
+See [current protocol](reports/mpe40_fixed_off_20261020/PROTOCOL.md).
+Future MPE completion exports automatically include PNG/PDF/SVG learning curves,
+their dataCSV, caption and plotting-version metadata. The original completed
+run's curves are now [available here](results/mappo_mpe_spread_fixed500_1000k_20261020_01_analysis/plots_v2/learning_curves.png).
+The earlier implementation passed121Docker regressions and the final layout
+check; [historical validation](reports/mpe_batch250_20261020/VALIDATION.md).
+The eval250 rerun in `results/mappo_mpe_spread_fixed500_1000k_eval250_20261020_02`
+was stopped by user request: last confirmed optimized/checkpoint step95000,
+last sampled batch95250. Logs/config/source/checkpoints are retained; this is
+an incomplete run, not a1Mresult or an exact-resume guarantee. No new run starts
+automatically. The base MPE formal_authorized_methods remains empty; the
+completed MAPPO40 and Pure100 runs used dedicated authorization configs.
+
+MPE MAPPO / Pure VLM / Soft-Hard VLM4Coop support is implemented for three silent
+agents and three landmarks, with velocity vectors and speed labels in the
+teacher RGB. See [MPE protocol and usage](docs/MPE.md).
+The current user-specified renderer uses thick fixed half-radius arrows inside
+circles (A0 red, A1 orange, A2 blue), internal A/V labels and green circular G
+targets with unoutlined names, without external text/margins.
+[Palette preview with A2 moving downward (v4)](results/mpe_rgb_down_preview_20261020_01/mpe_velocity_rgb.png).
+Current v7 uses fixed1440×1440 images enclosing the full scene. Layers are target circles → target names → agent circles → agent
+arrows/names/speed labels; ascending IDs within each layer. Agents can hide targets.
+Ten targeted Docker checks passed before the subsequently authorized runs.
+Speed labels now retain two decimal places; five focused checks passed.
+[Current fixed1440×1440 real preview, V=1.53](results/mpe_square1440_preview_20261020_01/mpe_velocity_rgb.png).
+The first MPE MAPPO formal 1M run completed and passed raw-log validation in
+`results/mappo_mpe_spread_fixed500_1000k_20261020_01` (10 environments, 25 steps,
+500 train seeds and 100 fixed evaluation seeds). Final native team return is
+-54.67 ± 13.39 (100 episodes, sample SD); final all-three coverage is 0/100.
+This historical formal run used10workers; a later small teacher API probe also
+completed. The later Pure100 formal result is listed above. Initial MPE tests:114 passed in
+135.17 s, `reports/mpe_20261020/pytest_final.log`; the 376-array LBF witness is
+still exactly equal. Launch verification and frozen artifacts are in the run.
+The renderer-only v2 correction additionally passed seven targeted checks;
+[current real velocity screenshot](results/mpe_velocity_preview_20261020_03/mpe_velocity_rgb.png).
+The completed MAPPO keeps its prelaunch source snapshot and did not use RGB.
+
+The behavior-preserving multi-environment refactor is complete. Core owners are
+`envs/`, `teachers/`, `algorithms/`, `training/`, `evaluation/`, and `utils/`;
+CLI implementations are under `cli/`. Retired compatibility entries are backed
+up under `src/old/vlm4coop/` and `scripts/old/`; obsolete source-patching scripts
+are in `scripts/old/legacy/`. New runs and reproductions use canonical module
+paths or categorized script paths, as listed in [the entry-point guide](docs/ENTRYPOINTS.md). See [the architecture guide](docs/ARCHITECTURE.md)
+and [validation report](reports/refactor_20261020/REPORT.md).
+The earlier refactor/entry archive preserved all LBF configuration bytes and
+passed 99 tests. MPE now uses a separate YAML and isolated dependency layer;
+existing LBF results and runtime are unchanged.
 
 - The fixed-500 MAPPO baseline completed 1,000,000 joint environment steps:
   `results/mappo_8x8_formal_fixed500_1000k_20261017_01`; validated statistics and
@@ -30,14 +132,14 @@ handoff exception. Preserve every existing run, checkpoint and raw response.
 - The user subsequently clarified that returned reasoning is allowed when JSON
   is valid or numerically repairable. OFF remains the request preference; there
   are no reasoning-control retries. Hard `_02` restarted from seed 0 at 12:03
-  UTC+8 and is running with a 1,000k-step budget, sharing the existing cache:
+  UTC+8 and completed 1,000,062 steps, sharing the existing cache:
   `results/hard_8x8_fixed500_1000k_api_20261019_02`.
-  Container: `vlm4coop_api_1792382610_cyc`; exec session 78486.
-  One launch check passed without reading intermediate scores. This is a fresh
+  Its `_analysis/validation.json` reports passed; no Hard container is running.
+  One launch check passed without reading intermediate scores. This was a fresh
   initialization, not exact checkpoint continuation. See
   `reports/HARD_ACCEPT_REASONING_RUN.md`.
-- Current implementation tests: 79 passed in CPU Docker, 63.12 s:
-  `reports/pytest_accept_reasoning_20261019.log`. Synthetic teacher tests are not
+- Earlier entry-archive tests: 99 passed in CPU Docker, 73.56 s:
+  `reports/archive_entries_20261020/pytest.log`. Synthetic teacher tests are not
   model results. Independent code and documented-invocation checks are saved in
   `reports/SOFT_API_1000K_CODE_REVIEW.md` and `SOFT_API_1000K_DOC_VALIDATION.md`.
   The Hard launch additionally passed two targeted Docker tests (7.19 s),
@@ -51,9 +153,9 @@ The current detailed response policy and exact formal invocation are in
 original proposal are recorded in `reports/USER_PROTOCOL_DECISION.md`; resume
 from the root checkpoint and verify actual files/containers first.
 
-## Frozen student and environment protocol
+## Frozen LBF student and environment protocol
 
-All formal environments are 8×8, with 3/4/5 agents and the same number of foods.
+All formal LBF environments are 8×8, with 3/4/5 agents and the same number of foods.
 The completed baseline and current Pure evaluation use 3 agents/3 foods. Native
 EPyMARL MAPPO uses numerical Actor inputs, 10 complete episodes per rollout batch,
 4 PPO epochs, training seed 0 and a 1,000k joint-environment-step budget. Student

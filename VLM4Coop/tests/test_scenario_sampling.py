@@ -3,10 +3,11 @@ from copy import deepcopy
 import json
 import numpy as np
 import pytest
-from vlm4coop.config import load_config, make_args
-from vlm4coop.scenario_sampling import TrainingSeedPool, audit_seed_pool
-from vlm4coop.environment import register_lbf, CoopGymmaWrapper
-from vlm4coop.training import setup_runner, train
+from vlm4coop.training.configuration import load_config, make_args
+from vlm4coop.envs.scenario_sampling import TrainingSeedPool, audit_seed_pool
+from vlm4coop.envs.lbf.adapter import register_lbf, CoopGymmaWrapper
+from vlm4coop.training.setup import setup_runner
+from vlm4coop.training.loop import train
 
 
 def test_pool_draws_are_reproducible_unique_and_rng_isolated():
@@ -27,7 +28,7 @@ def test_pool_draws_are_reproducible_unique_and_rng_isolated():
     # Training RNG is unaffected by arbitrary evaluation RNG changes.
     c, d = TrainingSeedPool(config), TrainingSeedPool(config)
     assert c.sample() == d.sample()
-    from vlm4coop.training import evaluation_rng
+    from vlm4coop.utils.rng import evaluation_rng
     with evaluation_rng(1000000): np.random.rand(100)
     assert c.sample() == d.sample()
 

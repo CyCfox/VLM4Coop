@@ -3,9 +3,10 @@ from types import SimpleNamespace
 import numpy as np
 from PIL import Image
 import pytest
-from vlm4coop.api_teacher import OpenCodeTeacher
-from vlm4coop.response_protocol import clip_and_normalize, parse_api_probabilities, ProbabilityFormatError
-from vlm4coop.teacher import ProbabilityCache, TeacherResult
+from vlm4coop.teachers.api import OpenCodeTeacher
+from vlm4coop.teachers.response_protocol import clip_and_normalize, parse_api_probabilities, ProbabilityFormatError
+from vlm4coop.teachers.cache import ProbabilityCache
+from vlm4coop.teachers.interfaces import TeacherResult
 
 
 def answer(values):
@@ -26,7 +27,7 @@ def teacher_with_responses(monkeypatch,tmp_path,texts,purpose='distillation',cac
             return json.dumps({'id':f'test-{teacher.calls}',
                 'choices':[{'message':{'content':self.text}}],
                 'usage':{'completion_tokens_details':{'reasoning_tokens':0}}}).encode()
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen',lambda *a,**k:Response(next(texts)))
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen',lambda *a,**k:Response(next(texts)))
     return teacher
 
 
@@ -54,7 +55,7 @@ def test_format_failures_retry_twice_then_accept_third(monkeypatch,tmp_path):
 
 
 def test_three_format_failures_pure_mac_executes_none(monkeypatch,tmp_path):
-    from vlm4coop.pure_vlm import TeacherMAC
+    from vlm4coop.evaluation.pure_vlm import TeacherMAC
     teacher=teacher_with_responses(monkeypatch,tmp_path,['bad']*3,purpose='pure')
     mac=TeacherMAC(teacher,3,use_cache=False)
     mac.runner=SimpleNamespace(frames={(0,0):np.zeros((2,2,3),dtype=np.uint8)})
@@ -105,7 +106,7 @@ def test_reasoning_without_json_uses_three_format_attempts(monkeypatch,tmp_path)
         def read(self):
             return json.dumps({'choices':[{'message':{'content':None,'reasoning_content':'still thinking'}}],
                 'usage':{'completion_tokens_details':{'reasoning_tokens':10}}}).encode()
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen',lambda *a,**k:Response())
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen',lambda *a,**k:Response())
     result=teacher.predict(Image.new('RGB',(2,2)),3,use_cache=False)
     assert result.source=='format_failure' and teacher.calls==3
     assert teacher.format_failures==3 and teacher.failed_decisions==1
@@ -130,7 +131,7 @@ def test_absent_reasoning_usage_stays_unknown_without_control_retry(monkeypatch,
             return json.dumps({'id':f'test-{teacher.calls}',
                 'choices':[{'message':{'content':text}}],
                 'usage':{'prompt_tokens':768,'completion_tokens':211}}).encode()
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen',lambda *a,**k:Response())
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen',lambda *a,**k:Response())
     result=teacher.predict(Image.new('RGB',(2,2)),3,use_cache=False)
     if text is None:
         assert result.source=='format_failure' and teacher.calls==3
@@ -144,7 +145,7 @@ def test_absent_reasoning_usage_stays_unknown_without_control_retry(monkeypatch,
     (None,'hidden','returned_reasoning'),(10,'','returned_reasoning'),
     (0,'hidden','returned_reasoning'),(None,'','not_reported'),(0,'','reported_zero')])
 def test_thinking_evidence_does_not_treat_missing_as_zero(tokens,hidden,expected):
-    from vlm4coop.api_teacher import off_response_evidence
+    from vlm4coop.teachers.api import off_response_evidence
     response={'choices':[{'message':{'reasoning_content':hidden}}],
               'usage':{'completion_tokens_details':{'reasoning_tokens':tokens}}}
     assert off_response_evidence(response)==expected
@@ -171,7 +172,7 @@ def test_returned_reasoning_accepts_valid_or_repaired_json_once_and_caches(monke
                 'usage':{'completion_tokens_details':{'reasoning_tokens':100}}}).encode()
     def request(req,**kwargs):
         payloads.append(json.loads(req.data)); return Response()
-    monkeypatch.setattr('vlm4coop.api_teacher.urlopen',request)
+    monkeypatch.setattr('vlm4coop.teachers.api.urlopen',request)
     image=Image.new('RGB',(2,2))
     try:
         result=teacher.predict(image,3)
@@ -189,7 +190,7 @@ def test_returned_reasoning_accepts_valid_or_repaired_json_once_and_caches(monke
 
 
 def test_final_content_has_priority_over_reasoning_draft(monkeypatch,tmp_path):
-    from vlm4coop.api_teacher import completion_text
+    from vlm4coop.teachers.api import completion_text
     response={'choices':[{'message':{'content':answer([0,0,0,0,0,1]),
                                     'reasoning_content':answer([1,0,0,0,0,0])}}]}
     raw,source=completion_text(response)

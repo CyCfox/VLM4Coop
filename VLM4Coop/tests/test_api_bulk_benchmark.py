@@ -8,16 +8,14 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from vlm4coop.api_batch import predict_many
-from vlm4coop.api_teacher import build_api_cache_identity
-from vlm4coop.teacher import ProbabilityCache, TeacherResult
+from vlm4coop.teachers.api_batch import predict_many
+from vlm4coop.teachers.api import build_api_cache_identity
+from vlm4coop.teachers.cache import ProbabilityCache
+from vlm4coop.teachers.interfaces import TeacherResult
 
 
 def load_benchmark():
-    path = Path(__file__).resolve().parents[1] / 'scripts/api_bulk_benchmark.py'
-    spec = importlib.util.spec_from_file_location('api_bulk_benchmark', path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    from vlm4coop.cli.probes import api_bulk_benchmark as module
     return module
 
 

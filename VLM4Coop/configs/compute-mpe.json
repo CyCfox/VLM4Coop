@@ -1,0 +1,19 @@
+{
+  "image": "pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime",
+  "user": "current UID:GID",
+  "cpus": 4,
+  "memory_gib": 8,
+  "gpu": false,
+  "ports": [],
+  "workdir": "/workspace/my_project",
+  "root_mount": "read-only",
+  "project_subdir_mount": "VLM4Coop read-write",
+  "python_layers": ["VLM4Coop/runtime/mpe_site", "VLM4Coop/runtime/site", "VLM4Coop/src", "epymarl/src"],
+  "extra_dependencies": "configs/requirements-mpe.txt, --no-deps, project-local target only",
+  "postprocess_python_layer": "Existing runtime/analysis_site prepended only for export/plot process; never used by student training",
+  "existing_runtime": {"gymnasium":"1.2.3","pygame":"2.6.1","numpy":"1.26.4","torch":"2.1.0"},
+  "threads": 2,
+  "SDL_VIDEODRIVER": "dummy",
+  "SDL_AUDIODRIVER": "dummy",
+  "validation": "unit tests, seeded real-dynamics witness and short training before formal launch"
+}
